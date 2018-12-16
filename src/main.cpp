@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
 
@@ -200,7 +201,12 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  // Define lane number
+  // Reference velocity
+  int lane = 1;
+  double ref_vel = 0.0;
+
+  h.onMessage([&ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -211,7 +217,8 @@ int main() {
 
       auto s = hasData(data);
 
-      if (s != "") {
+      if (s != "")
+      {
         auto j = json::parse(s);
         
         string event = j[0].get<string>();
@@ -233,27 +240,152 @@ int main() {
           	// Previous path's end s and d values 
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
-
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-          	json msgJson;
+            /// prep previous path
+            int prev_size = previous_path_x.size();
+            if(prev_size > 0) car_s = end_path_s;
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+            //bool too_close = false;
+            bool carM = false;
+            bool carL = false;
+            bool carR = false;
 
+            /// Find a car in my lane that is minimum 30 m ahead
+            for (int i = 0; i < sensor_fusion.size(); i++)
+            {
+                /// get dat sweet car info
+                float d = sensor_fusion[i][6];
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double check_speed = sqrt(vx * vx + vy * vy);
+                double tmp_car_s = sensor_fusion[i][5];
+                tmp_car_s += ((double)prev_size * 0.02 * check_speed);
+                /// which lane is the car on
+                int carLane = -1;
+                if ( d > 0 && d < 4 )         carLane = 0;
+                else if ( d > 4 && d < 8 )    carLane = 1;
+                else if ( d > 8 && d < 12 )   carLane = 2;
+                /// check if vehicles block our lanes
+                if (carLane == lane && tmp_car_s > car_s && (tmp_car_s - car_s) < 30)
+                    carM = true;
+                else if (carLane == lane-1 && tmp_car_s > car_s-30 && (tmp_car_s-car_s) < 30)
+                    carL = true;
+                else if (carLane == lane+1 && tmp_car_s > car_s-30 && (tmp_car_s-car_s) < 30)
+                    carR = true;
+            }
 
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+            /// prepare actions on neghboring cars if car is ahead
+            if(carM)
+            {
+              if (carL == false && lane > 0)     lane -= 1;
+              else if (carR == false && lane < 2)    lane += 1;
+              /// reduce velocity if no choice can be made
+              else ref_vel -= 1.0;
+            }
+            /// adjust speed if we have clear space
+            else
+            {
+                if ( ref_vel < 49.5 ) ref_vel += 0.4;
+            }
 
-          	auto msg = "42[\"control\","+ msgJson.dump()+"]";
+            /// calculate trajectory
+            vector<double> ptx;
+            vector<double> pty;
+            double refposx=car_x;
+            double refposy=car_y;
+            double refyaw=deg2rad(car_yaw);
+            // Use the previous points to calculate the trajectory (if any) or simply add default
+            if(prev_size >= 2)
+            {
+                /// use reference points for generation
+                refposx = previous_path_x[prev_size-1];
+                refposy = previous_path_y[prev_size-1];
+                double refposx_prev = previous_path_x[prev_size-2];
+                double refposy_prev = previous_path_y[prev_size-2];
+                refyaw = atan2(refposy - refposy_prev, refposx - refposx_prev);
+                /// add points to list
+                ptx.push_back(refposx_prev);
+                ptx.push_back(refposx);
+                pty.push_back(refposy_prev);
+                pty.push_back(refposy);
+            }
+            else
+            {
+                double prev_car_x = car_x - cos(car_yaw);
+                double prev_car_y = car_y - sin(car_yaw);
+                /// add points to list
+                ptx.push_back(prev_car_x);
+                ptx.push_back(car_x);
+                pty.push_back(prev_car_y);
+                pty.push_back(car_y);
+            }
 
-          	//this_thread::sleep_for(chrono::milliseconds(1000));
-          	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
+            /// prepare waypoints for different distances, 30m/60m/90m
+            vector<double> next_wp0 = getXY(car_s+30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp1 = getXY(car_s+60, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp2 = getXY(car_s+90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            /// add waypoints to list
+            ptx.push_back(next_wp0[0]);
+            ptx.push_back(next_wp1[0]);
+            ptx.push_back(next_wp2[0]);
+            pty.push_back(next_wp0[1]);
+            pty.push_back(next_wp1[1]);
+            pty.push_back(next_wp2[1]);
+
+            /// Transform points in list into ego coordinates
+            for(unsigned int i = 0; i < ptx.size(); i++)
+            {
+                double shift_x = ptx[i] - refposx;
+                double shift_y = pty[i] - refposy;
+                ptx[i] = shift_x * cos(-refyaw) - shift_y * sin(-refyaw);
+                pty[i] = shift_x * sin(-refyaw) + shift_y * cos(-refyaw);
+            }
+
+            /// create spline
+            tk::spline s;
+            s.set_points(ptx, pty);
+            vector<double> nextx;
+            vector<double> nexty;
+            /// add path points
+            for (int i = 0; i < previous_path_x.size(); i++)
+            {
+                nextx.push_back(previous_path_x[i]);
+                nexty.push_back(previous_path_y[i]);
+            }
+
+            /// calculate distanc y position for 30m distance
+            double target_x = 30.0;
+            double target_y = s(target_x);
+            double target_d = sqrt(target_x * target_x + target_y * target_y);
+            double x_add_on = 0;
+            /// discretize spline
+            for (unsigned int i = 1; i < 50 - previous_path_x.size(); i++)
+            {
+                double N = (target_d / (0.02 * ref_vel / 2.24));
+                double x_point = x_add_on + target_x / N;
+                double y_point = s(x_point);
+                x_add_on = x_point;
+                double x_ref = x_point;
+                double y_ref = y_point;
+                x_point = (x_ref * cos(refyaw) - y_ref * sin(refyaw));
+                y_point = (x_ref * sin(refyaw) + y_ref * cos(refyaw));
+                x_point += refposx;
+                y_point += refposy;
+                nextx.push_back(x_point);
+                nexty.push_back(y_point);
+            }
+
+            json msgJson;
+            msgJson["next_x"] = nextx;
+            msgJson["next_y"] = nexty;
+            auto msg = "42[\"control\","+ msgJson.dump()+"]";
+            //this_thread::sleep_for(chrono::milliseconds(1000));
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
-      } else {
+      }
+      else {
         // Manual driving
         std::string msg = "42[\"manual\",{}]";
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
