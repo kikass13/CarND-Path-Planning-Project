@@ -1,7 +1,39 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
    
-### Simulator.
+### Reflection
+[image1]: ./doc/lanechange.png "Lane Changing"
+[image2]: ./doc/6mins.png "Times Up"
+
+	The code model for generating paths is described in detail. This can be part of the README or a separate doc labeled "Model Documentation".
+
+
+![Driving][image1]
+
+I altered the main.ccp file as shown in the walkthrough and played around with various test runs (simulating a circle etc.). After that i implemented a simple lane description and car(obstacle) detection for those lane definitions.
+
+After all lanes and obstacles are defined a free one is chosen, else the car will keep it's lane and tries to drive at nearly the same velocity as the car ahead (ignoring max speed limits cause i'm a little bit lazy).
+
+A lane is free when there is no car on that lane ~30m in front or behind our ego vehicle. The 30m behind part was chosen because implementing and propagating the car to our longitudinal position and checking it's current velovity against our own, and also not violating the acceleration/comfort limits for this simulation, is very hard. This way we can keep a safe distance and cruise along except when there really is no problem ahead/behind when changing lanes.
+
+My implementation does not contain a "go back to your prefered" lane option, because that would be a subjective/arbitrary decision after all and i wanted to avoid unnecessary lane changes (because of the reasons i stated above).
+
+The spline is created with the [library](https://kluge.in-chemnitz.de/opensource/spline/spline.h) (header file) which udacity sourced in the lecture and works fine. I put at least 2 points (ego, goal) into that spline and when there are more waypoints available, these are added aswell. The fittting works well enough and creates a smooth drivable trajectory. 
+
+Obviously the waypoints are transformed into the perspective of our ego vehicle before putting them into the spline creation.
+
+![6mins][image2] 
+
+I took a screenshot after 6 minutes and aborted the simulation because it was working as expected. Sometimes the vehicle chooses the worng lane (because i prioritize the left over the right) and if another car/obstacle reaches the event horizon (or flickers into and out of the ~30m horizon) our ego vehicle will see that clear (left) lane and drive onto it only to slow down because it drives on a blocked lane. But that behavior can be explained, because my implementation does not have a cost function behind it to choose from multiple target trajectorys, nor does it have logic to prevent  these kind of behaviors by adjusting it's event horizon or waiting before a primitive lane sleection to gather more info.
+
+___
+___
+___
+___
+___
+   
+   
+### Simulator
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).
 
 ### Goals
