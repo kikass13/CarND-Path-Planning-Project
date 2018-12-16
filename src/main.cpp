@@ -251,7 +251,7 @@ int main() {
             bool carM = false;
             bool carL = false;
             bool carR = false;
-
+            double hold_speed = ref_vel;
             /// Find a car in my lane that is minimum 30 m ahead
             for (int i = 0; i < sensor_fusion.size(); i++)
             {
@@ -261,6 +261,7 @@ int main() {
                 double vy = sensor_fusion[i][4];
                 double check_speed = sqrt(vx * vx + vy * vy);
                 double tmp_car_s = sensor_fusion[i][5];
+                /// calculate position of car based on its velocity for the next step (20ms?, maybe extrapolate more)
                 tmp_car_s += ((double)prev_size * 0.02 * check_speed);
                 /// which lane is the car on
                 int carLane = -1;
@@ -269,7 +270,10 @@ int main() {
                 else if ( d > 8 && d < 12 )   carLane = 2;
                 /// check if vehicles block our lanes
                 if (carLane == lane && tmp_car_s > car_s && (tmp_car_s - car_s) < 30)
+                {
                     carM = true;
+                    hold_speed = check_speed;
+                }
                 else if (carLane == lane-1 && tmp_car_s > car_s-30 && (tmp_car_s-car_s) < 30)
                     carL = true;
                 else if (carLane == lane+1 && tmp_car_s > car_s-30 && (tmp_car_s-car_s) < 30)
@@ -282,12 +286,12 @@ int main() {
               if (carL == false && lane > 0)     lane -= 1;
               else if (carR == false && lane < 2)    lane += 1;
               /// reduce velocity if no choice can be made
-              else ref_vel -= 1.0;
+              else {ref_vel -= 1.0; if(ref_vel < hold_speed) ref_vel = hold_speed;}
             }
             /// adjust speed if we have clear space
             else
             {
-                if ( ref_vel < 49.5 ) ref_vel += 0.4;
+                if ( ref_vel < 48.9 ) ref_vel += 1.0;
             }
 
             /// calculate trajectory
@@ -354,7 +358,6 @@ int main() {
                 nextx.push_back(previous_path_x[i]);
                 nexty.push_back(previous_path_y[i]);
             }
-
             /// calculate distanc y position for 30m distance
             double target_x = 30.0;
             double target_y = s(target_x);
