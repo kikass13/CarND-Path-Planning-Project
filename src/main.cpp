@@ -10,6 +10,14 @@
 #include "json.hpp"
 #include "spline.h"
 
+
+
+#define MAX_SPEED   49.5
+#define MAX_ACC     0.6
+
+
+
+
 using namespace std;
 
 // for convenience
@@ -286,13 +294,23 @@ int main() {
               if (carL == false && lane > 0)     lane -= 1;
               else if (carR == false && lane < 2)    lane += 1;
               /// reduce velocity if no choice can be made
-              else {ref_vel -= 1.0; if(ref_vel < hold_speed) ref_vel = hold_speed;}
+              else {ref_vel -= MAX_ACC; if(ref_vel < hold_speed) ref_vel = hold_speed;}
             }
             /// adjust speed if we have clear space
-            else
+            /*else
             {
                 if ( ref_vel < 48.9 ) ref_vel += 1.0;
             }
+            */
+            /* REVIEW CHANGES
+             *
+             */
+
+           else
+           {
+                if ( ref_vel < MAX_SPEED ) ref_vel += MAX_ACC;
+           }
+
 
             /// calculate trajectory
             vector<double> ptx;
