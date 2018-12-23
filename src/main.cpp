@@ -13,7 +13,7 @@
 
 
 #define MAX_SPEED   49.5
-#define MAX_ACC     0.6
+#define MAX_ACC     0.224
 
 
 
